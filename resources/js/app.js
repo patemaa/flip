@@ -1,4 +1,5 @@
 import './bootstrap';
+import 'livewire-vite';
 
 import Alpine from 'alpinejs';
 
