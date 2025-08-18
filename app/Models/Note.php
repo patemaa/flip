@@ -12,6 +12,7 @@ class Note extends Model
         'title',
         'body',
         'attachment',
+        'tags'
     ];
 
     protected $casts = [

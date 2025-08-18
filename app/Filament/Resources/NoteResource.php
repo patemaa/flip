@@ -9,6 +9,11 @@ use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Actions\Action;
+use Filament\Tables\Actions\ActionGroup;
+use Filament\Tables\Actions\DeleteAction;
+use Filament\Tables\Actions\EditAction;
+use Filament\Tables\Actions\ViewAction;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
@@ -35,9 +40,7 @@ class NoteResource extends Resource
                 Forms\Components\TagsInput::make('tags')
                     ->label('Tags')
                     ->placeholder('Add a tag')
-                    ->separator(',')
                     ->columnSpanFull()
-                    ->hint('Separate them with a comma'),
             ]);
     }
 
@@ -49,18 +52,19 @@ class NoteResource extends Resource
                     ->searchable(),
                 Tables\Columns\TextColumn::make('body')
                     ->searchable()
-                    ->limit(50)
+                    ->limit(20)
                     ->getStateUsing(fn($record) => strip_tags($record->body)),
                 Tables\Columns\TextColumn::make('tags')
                     ->label('Tags')
-                    ->getStateUsing(fn($record) => implode(', ', $record->tags ?? [])),
+                    ->badge()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\BadgeColumn::make('attachment')
                     ->label('Attachment')
                     ->getStateUsing(fn($record) => $record->attachment ? 'Attached' : 'No File')
                     ->colors([
-                        'gray' => fn($state) => $state === 'Attached',
                         'gray' => fn($state) => $state === 'No File',
                     ])
+                    ->toggleable(isToggledHiddenByDefault: true)
                     ->url(fn($record) => $record->attachment ? asset('storage/' . $record->attachment) : null)
                     ->openUrlInNewTab(),
                 Tables\Columns\TextColumn::make('created_at')
@@ -77,11 +81,10 @@ class NoteResource extends Resource
                 Tables\Filters\TrashedFilter::make(),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
-                Tables\Actions\ForceDeleteAction::make(),
-                Tables\Actions\RestoreAction::make(),
-                Tables\Actions\Action::make('download')
+                ActionGroup::make([
+                    ViewAction::make(),
+                    EditAction::make(),
+                    Action::make('download')
                     ->label('Download')
                     ->icon('heroicon-o-arrow-down-on-square')
                     ->action(function ($record) {
@@ -90,20 +93,22 @@ class NoteResource extends Resource
 
                         $zip = new ZipArchive();
                         if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) === true) {
-
                             $body = strip_tags($record->body);
                             $zip->addFromString('note.txt', "Title: {$record->title}\n\nBody:\n{$body}");
 
                             if ($record->attachment && Storage::disk('public')->exists($record->attachment)) {
-                                $zip->addFile(storage_path('app/public/' . $record->attachment), basename($record->attachment));
+                                $zip->addFile(
+                                    storage_path('app/public/' . $record->attachment),
+                                    basename($record->attachment)
+                                );
                             }
-
-
                             $zip->close();
                         }
 
                         return response()->download($zipPath)->deleteFileAfterSend(true);
                     }),
+                    DeleteAction::make(),
+                ]),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -134,6 +139,7 @@ class NoteResource extends Resource
             'index' => Pages\ListNotes::route('/'),
             'create' => Pages\CreateNote::route('/create'),
             'edit' => Pages\EditNote::route('/{record}/edit'),
+            'view' => Pages\ViewNote::route('/{record}'),
             'trashed' => Pages\TrashedNotes::route('/trash'),
         ];
     }
