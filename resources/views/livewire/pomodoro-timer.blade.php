@@ -1,12 +1,6 @@
 <div x-data="pomodoroTimer" x-init="init()" class="max-w-4xl mx-auto">
     <!-- Timer Selection -->
     <div x-show="!sessionStarted" class="space-y-8">
-        <!-- Header -->
-        <div class="text-center mb-8">
-            <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">🍅 Pomodoro Timer</h1>
-            <p class="text-gray-600 dark:text-gray-400">Boost your productivity with focused work sessions</p>
-        </div>
-
         <!-- Preset Sessions -->
         <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8">
             <h3 class="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-6 text-center">Choose Your Session</h3>
