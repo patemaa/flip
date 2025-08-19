@@ -162,7 +162,6 @@ Alpine.data('notificationCenter', () => ({
             if (this.audio) {
                 this.audio.play();
             } else {
-                // Eğer ses dosyası henüz yüklenmediyse, yeniden deneriz
                 this.audio = new Audio(this.soundFile);
                 this.audio.play();
             }
@@ -181,6 +180,241 @@ Alpine.data('notificationCenter', () => ({
         }
     }
 }));
+document.addEventListener('alpine:init', () => {
+    Alpine.data('pomodoroTimer', () => ({
+        sessionStarted: false,
+        sessionType: '',
+        customMinutes: 25,
+        projectName: '',
+        priority: 'medium',
+        seconds: 0,
+        totalSeconds: 0,
+        isPaused: false,
+        isFinished: false,
+        interval: null,
+        sessionId: null,
+        accumulatedSeconds: 0,
+        sessionStartTime: null,
 
+        init() {
+            // Request notification permission
+            if ('Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+        },
+
+        async selectSession(type, minutes) {
+            this.sessionType = type;
+            this.totalSeconds = parseInt(minutes) * 60;
+            this.seconds = this.totalSeconds;
+            this.sessionStarted = true;
+            this.isPaused = false;
+            this.isFinished = false;
+            this.accumulatedSeconds = 0;
+
+            await this.createSession();
+
+            this.startTimer();
+        },
+
+        async startTimer() {
+            if (this.interval) clearInterval(this.interval);
+
+            this.sessionStartTime = new Date();
+
+            this.interval = setInterval(() => {
+                if (!this.isPaused && !this.isFinished) {
+                    this.seconds--;
+
+                    if (this.seconds <= 0) {
+                        this.finishTimer();
+                    }
+                }
+            }, 1000);
+        },
+
+        async pauseTimer() {
+            this.isPaused = true;
+            if (this.sessionStartTime) {
+                const elapsed = Math.floor((new Date() - this.sessionStartTime) / 1000);
+                this.accumulatedSeconds += elapsed;
+            }
+            await this.updateSessionStatus('paused');
+        },
+
+        async resumeTimer() {
+            this.isPaused = false;
+            this.sessionStartTime = new Date();
+            await this.updateSessionStatus('in_progress');
+        },
+
+        async stopTimer() {
+            if (this.interval) {
+                clearInterval(this.interval);
+                this.interval = null;
+            }
+            await this.updateSessionStatus('cancelled');
+            this.resetSession();
+        },
+
+        async finishTimer() {
+            if (this.interval) {
+                clearInterval(this.interval);
+                this.interval = null;
+            }
+
+            this.isFinished = true;
+            this.seconds = 0;
+
+            await this.updateSessionStatus('completed');
+
+            this.showNotification();
+            this.playSound();
+        },
+
+        async createSession() {
+            try {
+                const response = await fetch('/api/pomodoro/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                    },
+                    body: JSON.stringify({
+                        type: this.sessionType,
+                        duration_seconds: this.totalSeconds,
+                        project_name: this.projectName || null,
+                        priority: this.priority
+                    })
+                });
+
+                const data = await response.json();
+                if (data.session) {
+                    this.sessionId = data.session.id;
+                    console.log('Session created:', this.sessionId);
+                }
+            } catch (error) {
+                console.error('Error creating session:', error);
+            }
+        },
+
+        async updateSessionStatus(status) {
+            if (!this.sessionId) return;
+
+            try {
+                await fetch(`/api/pomodoro/${this.sessionId}/update`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                    },
+                    body: JSON.stringify({
+                        status: status,
+                        accumulated_seconds: this.accumulatedSeconds
+                    })
+                });
+
+                console.log('Session updated:', status);
+            } catch (error) {
+                console.error('Error updating session:', error);
+            }
+        },
+
+        async completeSession() {
+            this.resetSession();
+            await this.updateSessionStatus('completed');
+        },
+
+        resetSession() {
+            this.sessionStarted = false;
+            this.sessionType = '';
+            this.seconds = 0;
+            this.totalSeconds = 0;
+            this.isPaused = false;
+            this.isFinished = false;
+            this.sessionId = null;
+            this.accumulatedSeconds = 0;
+            this.sessionStartTime = null;
+
+            if (this.interval) {
+                clearInterval(this.interval);
+                this.interval = null;
+            }
+        },
+
+        formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        },
+
+        getSessionTypeLabel() {
+            const labels = {
+                'work': 'Work Session',
+                'short_break': 'Short Break',
+                'long_break': 'Long Break',
+                'custom': 'Custom Session'
+            };
+            return labels[this.sessionType] || 'Pomodoro Session';
+        },
+
+        getSessionIcon() {
+            const icons = {
+                'work': '🍅',
+                'short_break': '☕',
+                'long_break': '🌅',
+                'custom': '⏱️'
+            };
+            return icons[this.sessionType] || '🍅';
+        },
+
+        getTimerColor() {
+            if (this.isFinished) return 'text-green-500';
+            if (this.isPaused) return 'text-black';
+
+            const progress = (this.totalSeconds - this.seconds) / this.totalSeconds;
+            if (progress < 0.2) return 'text-green-500';
+            if (progress < 0.4) return 'text-blue-500';
+            if (progress < 0.6) return 'text-yellow-500';
+            if (progress < 0.8) return 'text-orange-500';
+            return 'text-red-500';
+        },
+
+        showNotification() {
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification('🍅 Pomodoro Complete!', {
+                    body: `Your ${this.getSessionTypeLabel()} is finished!`,
+                    icon: '/favicon.ico'
+                });
+            }
+        },
+
+        playSound() {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+            const playBeep = (frequency, duration, delay = 0) => {
+                setTimeout(() => {
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+
+                    oscillator.frequency.value = frequency;
+                    gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+                    gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.01);
+                    gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + duration);
+
+                    oscillator.start(audioContext.currentTime);
+                    oscillator.stop(audioContext.currentTime + duration);
+                }, delay);
+            };
+
+            playBeep(800, 0.2, 0);
+            playBeep(800, 0.2, 300);
+            playBeep(800, 0.4, 600);
+        }
+    }));
+});
 
 Alpine.start();

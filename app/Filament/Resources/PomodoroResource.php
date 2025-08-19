@@ -5,18 +5,17 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\PomodoroResource\Pages;
 use App\Filament\Resources\PomodoroResource\RelationManagers;
 use App\Models\Pomodoro;
-use Filament\Actions\DeleteAction;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Actions\Action;
 use Filament\Tables\Actions\ActionGroup;
 use Filament\Tables\Actions\EditAction;
+use Filament\Tables\Actions\DeleteAction;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Carbon\Carbon;
-use Filament\Notifications\Notification;
 
 class PomodoroResource extends Resource
 {
@@ -28,18 +27,14 @@ class PomodoroResource extends Resource
 
     protected static ?string $modelLabel = 'Pomodoro Session';
 
-    protected static ?int $navigationSort = 2;
-
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                // Hidden user_id field kaldırıldı - şimdilik kullanmayacağız
-
                 Forms\Components\Section::make('Session Details')
                     ->icon('heroicon-o-clock')
                     ->schema([
-                        Forms\Components\Grid::make(2)
+                        Forms\Components\Grid::make()
                             ->schema([
                                 Forms\Components\Select::make('type')
                                     ->label('Session Type')
@@ -75,7 +70,7 @@ class PomodoroResource extends Resource
                 Forms\Components\Section::make('Session Status')
                     ->icon('heroicon-o-chart-bar')
                     ->schema([
-                        Forms\Components\Grid::make(2)
+                        Forms\Components\Grid::make()
                             ->schema([
                                 Forms\Components\Select::make('status')
                                     ->options([
@@ -97,14 +92,14 @@ class PomodoroResource extends Resource
                                         'high' => 'High',
                                         'urgent' => 'Urgent',
                                     ])
-                                    ->default('medium'), // Default değer eklendi
+                                    ->default('medium'),
                             ]),
                     ]),
 
                 Forms\Components\Section::make('Timing')
                     ->icon('heroicon-o-calendar')
                     ->schema([
-                        Forms\Components\Grid::make(2)
+                        Forms\Components\Grid::make()
                             ->schema([
                                 Forms\Components\DateTimePicker::make('started_at')
                                     ->label('Started At')
@@ -136,8 +131,43 @@ class PomodoroResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->query(static::getEloquentQuery())
             ->columns([
+                Tables\Columns\TextColumn::make('expected_end_at')
+                    ->label('Expected End')
+                    ->dateTime('H:i:s')
+                    ->placeholder('Not started')
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('remaining_seconds')
+                    ->label('Remaining')
+                    ->getStateUsing(function ($record) {
+                        if (!$record || !method_exists($record, 'getFormattedRemainingTimeAttribute')) {
+                            return '-';
+                        }
+                        return $record->formatted_remaining_time ?? '-';
+                    })
+                    ->badge()
+                    ->color(function ($record) {
+                        if (!$record || !method_exists($record, 'getRemainingSecondsAttribute')) {
+                            return 'gray';
+                        }
+
+                        $remaining = $record->remaining_seconds ?? 0;
+                        return match (true) {
+                            $remaining <= 60 => 'danger',
+                            $remaining <= 300 => 'warning',
+                            default => 'success'
+                        };
+                    })
+                    ->visible(fn ($record) => $record && in_array($record->status ?? '', ['in_progress', 'paused'])),
+
+                Tables\Columns\TextColumn::make('accumulated_seconds')
+                    ->label('Progress')
+                    ->getStateUsing(fn ($record) => $record ? gmdate('i:s', $record->accumulated_seconds ?? 0) : '-')
+                    ->badge()
+                    ->color('info')
+                    ->toggleable(),
+
                 Tables\Columns\BadgeColumn::make('type')
                     ->label('Type')
                     ->colors([
@@ -146,7 +176,7 @@ class PomodoroResource extends Resource
                         'info' => 'long_break',
                         'warning' => 'custom',
                     ])
-                    ->formatStateUsing(fn($state) => match($state) {
+                    ->formatStateUsing(fn ($state) => match($state) {
                         'work' => 'Work',
                         'short_break' => 'Short Break',
                         'long_break' => 'Long Break',
@@ -215,11 +245,11 @@ class PomodoroResource extends Resource
                 Tables\Columns\TextColumn::make('actual_duration')
                     ->label('Actual Time')
                     ->getStateUsing(function ($record) {
-                        if ($record->started_at && $record->ended_at) {
-                            $diff = $record->started_at->diffInMinutes($record->ended_at);
-                            return sprintf('%d min', $diff);
+                        if (!$record || !$record->started_at || !$record->ended_at) {
+                            return '-';
                         }
-                        return '-';
+                        $diff = $record->started_at->diffInMinutes($record->ended_at);
+                        return sprintf('%d min', $diff);
                     })
                     ->badge()
                     ->color('success')
@@ -278,56 +308,101 @@ class PomodoroResource extends Resource
                         ->icon('heroicon-o-play')
                         ->color('success')
                         ->action(function ($record) {
-                            $record->update([
-                                'status' => 'in_progress',
-                                'started_at' => now(),
-                            ]);
+                            if (!$record) {
+                                return;
+                            }
 
-                            Notification::make()
-                                ->title('Session Started!')
-                                ->body('Pomodoro session has been started.')
-                                ->success()
-                                ->send();
+                            if (method_exists($record, 'startSession')) {
+                                $record->startSession();
+
+                                $endTime = ($record->expected_end_at) ? $record->expected_end_at->format('H:i:s') : 'Unknown';
+
+                                Notification::make()
+                                    ->title('Session Started!')
+                                    ->body("Will complete at: " . $endTime)
+                                    ->success()
+                                    ->send();
+                            } else {
+                                $record->update([
+                                    'status' => 'in_progress',
+                                    'started_at' => now(),
+                                ]);
+
+                                Notification::make()
+                                    ->title('Session Started!')
+                                    ->success()
+                                    ->send();
+                            }
                         })
-                        ->visible(fn ($record) => $record->status === 'not_started'),
+                        ->visible(fn ($record) => $record && ($record->status ?? '') === 'not_started'),
 
                     Action::make('pause_session')
                         ->label('Pause')
                         ->icon('heroicon-o-pause')
                         ->color('warning')
                         ->action(function ($record) {
-                            $record->update(['status' => 'paused']);
+                            if (!$record) {
+                                return;
+                            }
 
-                            Notification::make()
-                                ->title('Session Paused')
-                                ->success()
-                                ->send();
+                            if (method_exists($record, 'pauseSession')) {
+                                $record->pauseSession();
+
+                                Notification::make()
+                                    ->title('Session Paused')
+                                    ->body("Time accumulated: " . gmdate('i:s', $record->accumulated_seconds ?? 0))
+                                    ->warning()
+                                    ->send();
+                            } else {
+                                $record->update(['status' => 'paused']);
+
+                                Notification::make()
+                                    ->title('Session Paused')
+                                    ->warning()
+                                    ->send();
+                            }
                         })
-                        ->visible(fn ($record) => $record->status === 'in_progress'),
+                        ->visible(fn ($record) => $record && ($record->status ?? '') === 'in_progress'),
 
                     Action::make('resume_session')
                         ->label('Resume')
                         ->icon('heroicon-o-play')
                         ->color('info')
                         ->action(function ($record) {
-                            $record->update(['status' => 'in_progress']);
+                            if (method_exists($record, 'resumeSession')) {
+                                $record->resumeSession();
 
-                            Notification::make()
-                                ->title('Session Resumed')
-                                ->success()
-                                ->send();
+                                $endTime = $record->expected_end_at ? $record->expected_end_at->format('H:i:s') : 'Unknown';
+
+                                Notification::make()
+                                    ->title('Session Resumed')
+                                    ->body("Will complete at: " . $endTime)
+                                    ->info()
+                                    ->send();
+                            } else {
+                                $record->update(['status' => 'in_progress']);
+
+                                Notification::make()
+                                    ->title('Session Resumed')
+                                    ->info()
+                                    ->send();
+                            }
                         })
-                        ->visible(fn ($record) => $record->status === 'paused'),
+                        ->visible(fn ($record) => $record && ($record->status ?? '') === 'paused'),
 
                     Action::make('complete_session')
                         ->label('Complete')
                         ->icon('heroicon-o-check')
                         ->color('success')
                         ->action(function ($record) {
-                            $record->update([
-                                'status' => 'completed',
-                                'ended_at' => now(),
-                            ]);
+                            if (method_exists($record, 'completeSession')) {
+                                $record->completeSession();
+                            } else {
+                                $record->update([
+                                    'status' => 'completed',
+                                    'ended_at' => now(),
+                                ]);
+                            }
 
                             Notification::make()
                                 ->title('Session Completed!')
@@ -337,51 +412,12 @@ class PomodoroResource extends Resource
                         })
                         ->visible(fn ($record) => in_array($record->status, ['in_progress', 'paused'])),
 
-                    Action::make('cancel_session')
-                        ->label('Cancel')
-                        ->icon('heroicon-o-x-mark')
-                        ->color('danger')
-                        ->action(function ($record) {
-                            $record->update([
-                                'status' => 'cancelled',
-                                'ended_at' => now(),
-                            ]);
-
-                            Notification::make()
-                                ->title('Session Cancelled')
-                                ->warning()
-                                ->send();
-                        })
-                        ->requiresConfirmation()
-                        ->modalHeading('Cancel Session')
-                        ->modalDescription('Are you sure you want to cancel this session?')
-                        ->visible(fn ($record) => in_array($record->status, ['in_progress', 'paused', 'not_started'])),
-
-                    Action::make('duplicate')
-                        ->label('Duplicate Session')
-                        ->icon('heroicon-o-document-duplicate')
-                        ->color('info')
-                        ->action(function ($record) {
-                            $newSession = $record->replicate();
-                            $newSession->status = 'not_started';
-                            $newSession->started_at = null;
-                            $newSession->ended_at = null;
-                            $newSession->save();
-
-                            Notification::make()
-                                ->title('Session Duplicated')
-                                ->body('New session created with same settings.')
-                                ->success()
-                                ->send();
-                        }),
-
                     EditAction::make(),
-
-                    Tables\Actions\DeleteAction::make(),
+                    DeleteAction::make(),
                 ])
             ])
             ->headerActions([
-                Tables\Actions\Action::make('quick_work_session')
+                Action::make('quick_work_session')
                     ->label('Quick Work Session')
                     ->icon('heroicon-o-play')
                     ->color('success')
@@ -389,19 +425,32 @@ class PomodoroResource extends Resource
                         $session = Pomodoro::create([
                             'type' => 'work',
                             'duration_seconds' => 25 * 60,
-                            'status' => 'in_progress',
-                            'started_at' => now(),
+                            'status' => 'not_started',
                             'priority' => 'medium',
                         ]);
 
+                        // Eğer model'de method varsa kullan
+                        if (method_exists($session, 'startSession')) {
+                            $session->startSession();
+                            $endTime = $session->expected_end_at ? $session->expected_end_at->format('H:i:s') : 'Unknown';
+                            $body = "25-minute session will complete at: " . $endTime;
+                        } else {
+                            $session->update([
+                                'status' => 'in_progress',
+                                'started_at' => now(),
+                            ]);
+                            $body = "25-minute session started!";
+                        }
+
                         Notification::make()
-                            ->title('Quick Work Session Started!')
-                            ->body('25-minute work session is now running.')
+                            ->title('Work Session Started!')
+                            ->body($body)
                             ->success()
+                            ->persistent()
                             ->send();
                     }),
 
-                Tables\Actions\Action::make('quick_break')
+                Action::make('quick_break')
                     ->label('Quick Break')
                     ->icon('heroicon-o-pause')
                     ->color('info')
@@ -409,15 +458,28 @@ class PomodoroResource extends Resource
                         $session = Pomodoro::create([
                             'type' => 'short_break',
                             'duration_seconds' => 5 * 60,
-                            'status' => 'in_progress',
-                            'started_at' => now(),
+                            'status' => 'not_started',
                             'priority' => 'low',
                         ]);
 
+                        // Eğer model'de method varsa kullan
+                        if (method_exists($session, 'startSession')) {
+                            $session->startSession();
+                            $endTime = $session->expected_end_at ? $session->expected_end_at->format('H:i:s') : 'Unknown';
+                            $body = "5-minute break will complete at: " . $endTime;
+                        } else {
+                            $session->update([
+                                'status' => 'in_progress',
+                                'started_at' => now(),
+                            ]);
+                            $body = "5-minute break started!";
+                        }
+
                         Notification::make()
-                            ->title('Quick Break Started!')
-                            ->body('5-minute break session is now running.')
+                            ->title('Break Started!')
+                            ->body($body)
                             ->success()
+                            ->persistent()
                             ->send();
                     }),
             ])
@@ -432,10 +494,17 @@ class PomodoroResource extends Resource
                         ->action(function ($records) {
                             $count = 0;
                             foreach ($records as $record) {
-                                $record->update([
-                                    'status' => 'completed',
-                                    'ended_at' => now(),
-                                ]);
+                                if (!$record) {
+                                    continue;
+                                }
+                                if (method_exists($record, 'completeSession')) {
+                                    $record->completeSession();
+                                } else {
+                                    $record->update([
+                                        'status' => 'completed',
+                                        'ended_at' => now(),
+                                    ]);
+                                }
                                 $count++;
                             }
 
@@ -488,17 +557,6 @@ class PomodoroResource extends Resource
             ->poll('30s');
     }
 
-    /**
-     * User filtering kaldırıldı - şimdilik tüm kayıtları göster
-     */
-    // public static function getEloquentQuery(): Builder
-    // {
-    //     return parent::getEloquentQuery()->where('user_id', auth()->id());
-    // }
-
-    /**
-     * Export sessions to CSV
-     */
     public static function exportSessionsToCSV($records)
     {
         $filename = 'pomodoro-sessions-' . date('Y-m-d') . '.csv';
