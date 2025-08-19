@@ -7,7 +7,7 @@
             </svg>
         </button>
 
-        <p>date</p>{{--19.08.2025 Sali--}}
+        <p>{{ now()->format('d.m.Y l') }}</p>
         <button>
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
                  stroke="currentColor" class="size-6">
@@ -18,7 +18,13 @@
 
     <div x-data="{ modelOpen: false }" class="">
         <div class="flex items-end justify-center">
-            <p class="font-bold text-4xl">time</p>
+            @if($activePomodoro && $activePomodoro->status === 'in_progress')
+                <p class="font-bold text-4xl text-red-500">{{ $activePomodoro->formatted_remaining_time }}</p>
+            @elseif($activePomodoro && $activePomodoro->status === 'paused')
+                <p class="font-bold text-4xl text-yellow-500">{{ $activePomodoro->formatted_remaining_time }}</p>
+            @else
+                <p class="font-bold text-4xl">{{ now()->format('H:i:s') }}</p>
+            @endif
             <button @click="modelOpen =!modelOpen" class="ml-2">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none"
                      viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"
@@ -27,8 +33,8 @@
                           d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
                 </svg>
             </button>
-
         </div>
+
         <div x-show="modelOpen" class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog"
              aria-modal="true">
             <div class="flex items-center justify-center min-h-screen px-4 text-center md:items-center sm:block sm:p-0">
@@ -57,10 +63,9 @@
                         <div class="p-2">
                             <div class="bg-purple-800 rounded">
                                 <p class="text-white text-center px-6 py-2 text-sm">
-                                    <span>date</span> tarihinden itibaren bugune
+                                    <span>{{ $firstPomodoroDate ?? 'Başlangıç tarihi' }}</span> tarihinden itibaren bugune
                                     <br>
-                                    <span
-                                        class="text-amber-300 font-extrabold text-2xl">time</span>{{--0sa 27dk 44sn--}}
+                                    <span class="text-amber-300 font-extrabold text-2xl">{{ $totalStudyTime ?? '0sa 0dk' }}</span>
                                     <br>
                                     Calistin!
                                 </p>
@@ -74,16 +79,16 @@
         <hr class="mt-14 mb-4">
         <div class="flex justify-between text-center px-3 text-sm">
             <div>
-                <p>Hedef Sure</p>
-                <p class="text-xl">time</p>{{--                02:00:00--}}
+                <p>Bugunun Hedefi</p>
+                <p class="text-xl">{{ $dailyTargetTime ?? '02:00:00' }}</p>
             </div>
             <div>
-                <p>Seviyesi</p>
-                <p class="text-xl">seviye</p>{{--                a/b/c/d/e--}}
+                <p>Tamamlanan</p>
+                <p class="text-xl">{{ $todayCompletedTime ?? '00:00:00' }}</p>
             </div>
             <div>
                 <p>Basari Orani</p>
-                <p class="text-xl">yuzdelik</p>{{--                %50/%60/%70--}}
+                <p class="text-xl">{{ $todaySuccessRate ?? '0' }}%</p>
             </div>
         </div>
         <hr class="mt-2">
@@ -91,31 +96,47 @@
             <div class="flex justify-between mt-2 text-sm mb-4">
                 <div class="flex items-center">
                     <x-hugeicons-target-02 class="size-4 mr-2 text-purple-500"/>
-                    <p>Bugunun Heedf Listesi</p>
+                    <p>Bugunun Pomodoro Listesi</p>
                 </div>
                 <div>
-                    <a href="" class="text-purple-600">Hedeflerim</a>
+                    <a href="/pomodoros" class="text-purple-600">Tum Pomodorolaer</a>
                 </div>
             </div>
-            <div class="bg-red-400 rounded-lg w-full h-16 py-1">
-                <div class="px-3 py-2 text-white flex items-center text-sm justify-between">
-                    <div class="rounded-full w-10 h-10 bg-white">
-                        <p>
-                            <x-fas-a class="size-7 text-red-500 mt-1"/>
-                        </p>
-                    </div>
 
-                    <div class="justify-between flex items-center space-x-8">
-                        <div class="space-y-1">
-                            <p>project_name</p>{{--                        Okume/yazma...--}}
-                            <p>frequency</p>{{--                        haftada 1 / ayda1 /her gun--}}
+            @forelse($todayPomodoros ?? [] as $pomodoro)
+                <div class="rounded-lg w-full h-16 py-1 mb-2
+                @if($pomodoro->status === 'completed') bg-green-400
+                @elseif($pomodoro->status === 'in_progress') bg-red-400
+                @elseif($pomodoro->status === 'paused') bg-yellow-400
+                @else bg-gray-400 @endif">
+                    <div class="px-3 py-2 text-white flex items-center text-sm justify-between">
+                        <div class="rounded-full w-10 h-10 bg-white flex items-center justify-center">
+                            @if($pomodoro->type === 'work')
+                                <span class="text-red-500 font-bold">W</span>
+                            @elseif($pomodoro->type === 'short_break')
+                                <span class="text-yellow-500 font-bold">S</span>
+                            @else
+                                <span class="text-green-500 font-bold">L</span>
+                            @endif
                         </div>
-                        <div class="space-y-1">
-                            <p>yuzdelik</p>{{--    tamamlanma yuzdeligi                    %100--}}
-                            <p>sure</p>{{--      harcanan sure            00:27:26--}}
-                        </div>
-                        <div
-                            x-data="{
+
+                        <div class="justify-between flex items-center space-x-8">
+                            <div class="space-y-1">
+                                <p>{{ $pomodoro->project_name ?? 'Genel Çalışma' }}</p>
+                                <p class="text-xs">{{ ucfirst($pomodoro->type) }} - {{ ucfirst($pomodoro->status) }}</p>
+                            </div>
+                            <div class="space-y-1">
+                                @if($pomodoro->status === 'in_progress')
+                                    <p>Kalan: {{ $pomodoro->formatted_remaining_time }}</p>
+                                @elseif($pomodoro->status === 'completed')
+                                    <p>Tamamlandı ✓</p>
+                                @elseif($pomodoro->status === 'paused')
+                                    <p>Duraklatıldı ⏸</p>
+                                @endif
+                                <p>{{ sprintf('%02d:%02d', floor($pomodoro->duration_seconds / 60), $pomodoro->duration_seconds % 60) }}</p>
+                            </div>
+                            <div
+                                x-data="{
                                     open: false,
                                     toggle() {
                                         if (this.open) {
@@ -130,66 +151,78 @@
                                         focusAfter && focusAfter.focus()
                                     }
                                 }"
-                            x-on:keydown.escape.prevent.stop="close($refs.button)"
-                            x-on:focusin.window="! $refs.panel.contains($event.target) && close()"
-                            x-id="['dropdown-button']"
-                            class="relative"
-                        >
-                            <!-- Button -->
-                            <button
-                                x-ref="button"
-                                x-on:click="toggle()"
-                                :aria-expanded="open"
-                                :aria-controls="$id('dropdown-button')"
-                                type="button"
-                                class=""
+                                x-on:keydown.escape.prevent.stop="close($refs.button)"
+                                x-on:focusin.window="! $refs.panel.contains($event.target) && close()"
+                                x-id="['dropdown-button']"
+                                class="relative"
                             >
-                                <x-fas-ellipsis-vertical class="size-5"/>
+                                <button
+                                    x-ref="button"
+                                    x-on:click="toggle()"
+                                    :aria-expanded="open"
+                                    :aria-controls="$id('dropdown-button')"
+                                    type="button"
+                                    class=""
+                                >
+                                    <x-fas-ellipsis-vertical class="size-5"/>
+                                </button>
 
-                            </button>
+                                <div
+                                    x-ref="panel" x-show="open" x-transition.origin.top.left
+                                    x-on:click.outside="close($refs.button)" :id="$id('dropdown-button')" x-cloak
+                                    class="absolute right-0 min-w-48 rounded-lg shadow-sm mt-2 z-50 origin-top-left bg-white p-1.5 outline-none border border-gray-200"
+                                >
+                                    @if($pomodoro->status === 'paused')
+                                        <a href="/pomodoros/{{ $pomodoro->id }}/resume"
+                                           class="px-2 lg:py-1.5 py-2 w-full flex items-center rounded-md transition-colors text-left text-gray-800 hover:bg-green-50 hover:text-green-600">
+                                            ▶️ Devam Et
+                                        </a>
+                                    @elseif($pomodoro->status === 'in_progress')
+                                        <a href="/pomodoros/{{ $pomodoro->id }}/pause"
+                                           class="px-2 lg:py-1.5 py-2 w-full flex items-center rounded-md transition-colors text-left text-gray-800 hover:bg-yellow-50 hover:text-yellow-600">
+                                            ⏸️ Duraklat
+                                        </a>
+                                    @endif
 
-                            <!-- Panel -->
-                            <div
-                                x-ref="panel" x-show="open" x-transition.origin.top.left
-                                x-on:click.outside="close($refs.button)" :id="$id('dropdown-button')" x-cloak
-                                class="absolute right-0 min-w-48 rounded-lg shadow-sm mt-2 z-50 origin-top-left bg-white p-1.5 outline-none border border-gray-200"
-                            >
-                                <a href=""
-                                   class="px-2 lg:py-1.5 py-2 w-full flex items-center rounded-md transition-colors text-left text-gray-800 hover:bg-gray-50 focus-visible:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
-                                    Kaydi Duzenle
-                                </a>
+                                    @if($pomodoro->status !== 'completed')
+                                        <a href="/pomodoros/{{ $pomodoro->id }}/complete"
+                                           class="px-2 lg:py-1.5 py-2 w-full flex items-center rounded-md transition-colors text-left text-gray-800 hover:bg-green-50 hover:text-green-600">
+                                            ✅ Tamamla
+                                        </a>
+                                    @endif
 
-                                <a href=""
-                                   class="px-2 lg:py-1.5 py-2 w-full flex items-center rounded-md transition-colors text-left text-gray-800 hover:bg-gray-50 focus-visible:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
-                                    Hedef Duzenle
-                                </a>
+                                    <a href="/pomodoros/{{ $pomodoro->id }}/edit"
+                                       class="px-2 lg:py-1.5 py-2 w-full flex items-center rounded-md transition-colors text-left text-gray-800 hover:bg-gray-50">
+                                        ✏️ Duzenle
+                                    </a>
 
-                                <a href=""
-                                   class="px-2 lg:py-1.5 py-2 w-full flex items-center rounded-md transition-colors text-left text-gray-800 hover:bg-gray-50 focus-visible:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
-                                    Yapilacaklara Ekle
-                                </a>
-                                <a href=""
-                                   class="px-2 lg:py-1.5 py-2 w-full flex items-center rounded-md transition-colors text-left text-gray-800 hover:bg-gray-50 focus-visible:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
-                                    Hedefi Tamamla
-                                </a>
-                                <a href=""
-                                   class="px-2 lg:py-1.5 py-2 w-full flex items-center rounded-md transition-colors text-left text-gray-800 hover:bg-red-50 hover:text-red-600 focus-visible:bg-red-50 focus-visible:text-red-600 disabled:opacity-50 disabled:cursor-not-allowed">
-                                    Sil
-                                </a>
+                                    <a href="/pomodoros/{{ $pomodoro->id }}/delete"
+                                       class="px-2 lg:py-1.5 py-2 w-full flex items-center rounded-md transition-colors text-left text-gray-800 hover:bg-red-50 hover:text-red-600">
+                                        🗑️ Sil
+                                    </a>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
+            @empty
+                <div class="text-center text-gray-500 py-4">
+                    Bugün için pomodoro bulunmuyor.
+                    <br>
+                    <a href="/pomodoros/create" class="text-purple-600 underline">Yeni Pomodoro Başlat</a>
+                </div>
+            @endforelse
 
             <div class="rounded-full w-10 h-10 bg-purple-300 mt-3 text-white">
-                <button class="ml-2 mt-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
-                         stroke="currentColor" class="size-6">
-                        <path stroke-linecap="round" stroke-linejoin="round"
-                              d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"/>
-                    </svg>
-                </button>
+                <a href="/pomodoros/create" class="block">
+                    <button class="ml-2 mt-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                             stroke="currentColor" class="size-6">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                  d="M12 4.5v15m7.5-7.5h-15"/>
+                        </svg>
+                    </button>
+                </a>
             </div>
         </div>
     </div>

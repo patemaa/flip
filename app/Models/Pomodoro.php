@@ -131,4 +131,5 @@ class Pomodoro extends Model
 
         return $total;
     }
+
 }
