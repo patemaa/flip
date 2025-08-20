@@ -19,7 +19,7 @@ class PomodoroTimer extends Component
 
     public function mount()
     {
-        $this->selectedDate = today();
+        $this->selectedDate = now();
         $this->loadDateData();
     }
 
@@ -42,8 +42,8 @@ class PomodoroTimer extends Component
 
     public function loadDateData()
     {
-        $this->datePomodoros = Pomodoro::whereDate('created_at', $this->selectedDate)
-            ->orderBy('created_at', 'desc')
+        $this->datePomodoros = Pomodoro::whereDate('started_at', $this->selectedDate)
+            ->orderBy('started_at', 'desc')
             ->get();
 
         $daySeconds = $this->datePomodoros->where('status', 'completed')->sum('duration_seconds');
@@ -56,21 +56,35 @@ class PomodoroTimer extends Component
         $dailyTargetSeconds = 2 * 3600;
         $this->completionPercentage = $dailyTargetSeconds > 0 ? round(($daySeconds / $dailyTargetSeconds) * 100) : 0;
 
-        $this->gradeLevel = $this->calculateGrade($this->completionPercentage);
+
+
+        $completedBreaks = $this->datePomodoros->where('status', 'completed')
+            ->whereIn('type', ['short_break', 'long_break'])
+            ->count();
+        $this->gradeLevel = $this->calculateGrade($this->completionPercentage, $completedBreaks);
 
         // İlk pomodoro tarihi (genel)
-        $firstPomodoro = Pomodoro::orderBy('created_at')->first();
-        $this->firstPomodoroDate = $firstPomodoro ? $firstPomodoro->created_at->format('d.m.Y') : 'Henüz başlanmadı';
+        $firstPomodoro = Pomodoro::orderBy('started_at')->first();
+        $this->firstPomodoroDate = $firstPomodoro ? $firstPomodoro->started_at->format('d.m.Y') : 'Henüz başlanmadı';
     }
 
-    private function calculateGrade($percentage)
+    private function calculateGrade($percentage, $breakCount)
     {
-        if ($percentage >= 100) return 'A';
-        if ($percentage >= 80) return 'B';
-        if ($percentage >= 60) return 'C';
-        if ($percentage >= 40) return 'D';
-        if ($percentage >= 20) return 'E';
+        $adjustedPercentage = $percentage - ($breakCount * 5);
+        if ($adjustedPercentage < 0) {
+            $adjustedPercentage = 0;
+        }
+
+        if ($adjustedPercentage >= 100) return 'A';
+        if ($adjustedPercentage >= 80) return 'B';
+        if ($adjustedPercentage >= 60) return 'C';
+        if ($adjustedPercentage >= 40) return 'D';
+        if ($adjustedPercentage >= 20) return 'E';
         return 'F';
+    }
+    public function getGrade($pomodoro)
+    {
+        return $this->calculateGrade($pomodoro->percentage, $pomodoro->break_count);
     }
 
     public function pausePomodoro($pomodoroId)

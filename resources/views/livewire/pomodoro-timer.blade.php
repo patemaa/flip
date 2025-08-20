@@ -9,7 +9,9 @@
                 </svg>
             </button>
 
-            <p class="font-medium">{{ Carbon\Carbon::parse($selectedDate)->locale('tr')->isoFormat('DD.MM.YYYY dddd') }}</p>
+            <p class="font-medium">{{ $selectedDate }}</p>
+
+{{--            {{ \Carbon\Carbon::parse($selectedDate)->locale('tr')->isoFormat('DD.MM.YYYY dddd') }}--}}
 
             <button wire:click="nextDay" class="hover:bg-gray-100 p-1 rounded">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
@@ -132,14 +134,8 @@
                         @endphp
                         <div class="rounded-lg w-full h-16 py-1 mb-2 {{ $randomColor }}">
                             <div class="px-3 py-2 text-white flex items-center text-sm justify-between space-x-2">
-                                <div class="rounded-full w-10 h-10 bg-white flex items-center justify-center flex-shrink-0">
-                                    @if($pomodoro->type === 'work')
-                                        <span class="text-red-500 font-bold">W</span>
-                                    @elseif($pomodoro->type === 'short_break')
-                                        <span class="text-yellow-500 font-bold">S</span>
-                                    @else
-                                        <span class="text-green-500 font-bold">L</span>
-                                    @endif
+                                <div class="text-black rounded-full w-10 h-10 bg-white flex items-center justify-center flex-shrink-0">
+                                    {{ $this->getGrade($pomodoro) }}
                                 </div>
 
                                 <div class="flex items-center space-x-4 flex-1 min-w-0">
