@@ -8,11 +8,7 @@
                     <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/>
                 </svg>
             </button>
-
             <p class="font-medium">{{ $selectedDate }}</p>
-
-{{--            {{ \Carbon\Carbon::parse($selectedDate)->locale('tr')->isoFormat('DD.MM.YYYY dddd') }}--}}
-
             <button wire:click="nextDay" class="hover:bg-gray-100 p-1 rounded">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
                      stroke="currentColor" class="size-6">
@@ -21,11 +17,12 @@
             </button>
         </div>
 
-        <div x-data="{ modelOpen: false }" class="">
+        <!-- Modal için ayrı Alpine.js bileşeni -->
+        <div x-data="{ modalOpen: false }" class="">
             <!-- O Günün Toplam Çalışma Süresi -->
             <div class="flex items-end justify-center">
                 <p class="font-bold text-4xl">{{ $totalStudyTime }}</p>
-                <button @click="modelOpen =!modelOpen" class="ml-2">
+                <button @click="modalOpen = !modalOpen" class="ml-2">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none"
                          viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"
                          class="w-5 h-5">
@@ -36,54 +33,43 @@
             </div>
 
             <!-- Toplam Çalışma Süresi Modal -->
-            <div x-show="modelOpen" class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title"
-                 role="dialog"
-                 aria-modal="true">
-                <div
-                    class="flex items-center justify-center min-h-screen px-4 text-center md:items-center sm:block sm:p-0">
-                    <div x-cloak @click="modelOpen = false" x-show="modelOpen"
-                         x-transition:enter="transition ease-out duration-300 transform"
-                         x-transition:enter-start="opacity-0"
-                         x-transition:enter-end="opacity-100"
-                         x-transition:leave="transition ease-in duration-200 transform"
-                         x-transition:leave-start="opacity-100"
-                         x-transition:leave-end="opacity-0"
-                         class="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-40" aria-hidden="true"
-                    ></div>
-                    <div x-cloak x-show="modelOpen"
-                         x-transition:enter="transition ease-out duration-300 transform"
-                         x-transition:enter-start="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
-                         x-transition:enter-end="opacity-100 translate-y-0 sm:scale-100"
-                         x-transition:leave="transition ease-in duration-200 transform"
-                         x-transition:leave-start="opacity-100 translate-y-0 sm:scale-100"
-                         x-transition:leave-end="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
-                         class="inline-block w-[300px]  my-20 overflow-hidden text-left transition-all transform bg-white rounded-lg shadow-xl"
-                    >
-                        <div class="">
-                            <div class="bg-purple-200 py-2 w-full text-center text-xl ">
-                                Toplam Calisma Suresi
-                            </div>
-                            <div class="p-2">
-                                <div class="bg-purple-800 rounded">
-                                    <p class="text-white text-center px-6 py-2 text-sm">
-                                        <span>{{ $firstPomodoroDate }}</span> tarihinden itibaren bugune
-                                        <br>
-                                        <span class="text-amber-300 font-extrabold text-2xl">
+            <div x-show="modalOpen"
+                 @click.away="modalOpen = false"
+                 x-transition:enter="transition ease-out duration-300"
+                 x-transition:enter-start="opacity-0"
+                 x-transition:enter-end="opacity-100"
+                 x-transition:leave="transition ease-in duration-200"
+                 x-transition:leave-start="opacity-100"
+                 x-transition:leave-end="opacity-0"
+                 class="fixed inset-0 z-50 overflow-y-auto"
+                 style="display: none;">
+                <div class="flex items-center justify-center min-h-screen px-4">
+                    <div class="fixed inset-0 bg-gray-500 bg-opacity-40"></div>
+                    <div class="relative bg-white rounded-lg shadow-xl w-[300px]">
+                        <div class="bg-purple-200 py-2 w-full text-center text-xl">
+                            Toplam Calisma Suresi
+                        </div>
+                        <div class="p-2">
+                            <div class="bg-purple-800 rounded">
+                                <p class="text-white text-center px-6 py-2 text-sm">
+                                    <span>{{ $firstPomodoroDate }}</span> tarihinden itibaren bugune
+                                    <br>
+                                    <span class="text-amber-300 font-extrabold text-2xl">
                                         @php
                                             $allTimeSeconds = \App\Models\Pomodoro::where('status', 'completed')->sum('duration_seconds');
                                             $allTimeFormatted = sprintf('%dsa %ddk %dsn', floor($allTimeSeconds / 3600), floor(($allTimeSeconds % 3600) / 60), $allTimeSeconds % 60);
                                         @endphp
-                                            {{ $allTimeFormatted }}
+                                        {{ $allTimeFormatted }}
                                     </span>
-                                        <br>
-                                        Calistin!
-                                    </p>
-                                </div>
+                                    <br>
+                                    Calistin!
+                                </p>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
+
 
             <hr class="mt-14 mb-4">
 
@@ -477,32 +463,93 @@
             </div>
 
             <!-- Controls -->
-            <div class="flex flex-wrap items-center justify-center gap-4">
-                <button
-                    x-show="!isFinished"
-                    @click="isPaused ? resumeTimer() : pauseTimer()"
-                    :class="isPaused ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'"
-                    class="flex items-center space-x-2 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-300 transform hover:scale-105 shadow-lg"
-                >
-                    <svg x-show="isPaused" class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path>
-                    </svg>
-                    <svg x-show="!isPaused" class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path>
-                    </svg>
-                    <span x-text="isPaused ? 'Resume' : 'Pause'"></span>
-                </button>
+            <div x-data="{
+                    isPaused: false,
+                    showDialog: false,
+                    countdown: 15,
+                    countdownTimer: null,
 
-                <button
-                    x-show="!isFinished"
-                    @click="stopTimer()"
-                    class="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-300 transform hover:scale-105 shadow-lg"
-                >
-                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clip-rule="evenodd"></path>
-                    </svg>
-                    <span>Stop</span>
-                </button>
+                    startCountdown() {
+                        this.stopCountdown();
+                        if(this.countdown > 0) {
+                            this.countdownTimer = setInterval(() => {
+                                this.countdown--;
+                                if(this.countdown <= 0) {
+                                    this.stopCountdown();
+                                    this.earlyFinish();
+                                }
+                            }, 1000);
+                        }
+                    },
+
+                    stopCountdown() {
+                        if(this.countdownTimer) {
+                            clearInterval(this.countdownTimer);
+                            this.countdownTimer = null;
+                        }
+                    },
+
+                    pauseTimer() {
+                        this.isPaused = true;
+                        this.showDialog = true;
+                        this.countdown = 15;
+                        this.startCountdown();
+                    },
+
+                    resumeTimer() {
+                        this.isPaused = false;
+                        this.showDialog = false;
+                        this.stopCountdown();
+                    },
+
+                    earlyFinish() {
+                        this.isPaused = false;
+                        this.showDialog = false;
+                        this.stopCountdown();
+                    }
+                }"
+                 x-init="$watch('showDialog', value => { if(value) startCountdown() })">
+
+                <div class="flex justify-center space-x-2">
+
+                    <button @click="pauseTimer()" x-show="!isPaused"
+                            class="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-300 transform hover:scale-105 shadow-lg"
+                    >
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clip-rule="evenodd"></path>
+                        </svg>
+                        <span>Stop</span>
+                    </button>
+
+
+                    <button @click="resumeTimer()" x-show="isPaused && !showDialog" class="bg-green-600 text-white px-4 py-2 rounded">
+                        Resume
+                    </button>
+                </div>
+
+                <!-- Pause Dialog -->
+                <div x-show="showDialog"
+                     x-transition:enter="transition ease-out duration-300"
+                     x-transition:enter-start="opacity-0"
+                     x-transition:enter-end="opacity-100"
+                     x-transition:leave="transition ease-in duration-200"
+                     x-transition:leave-start="opacity-100"
+                     x-transition:leave-end="opacity-0"
+                     class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
+                     style="display: none;">
+                    <div class="bg-white p-6 rounded-lg space-y-4 text-center">
+                        <p>Ölçmeye devam etmek istiyorsan <span x-text="countdown"></span> saniye içinde devam et</p>
+                        <div class="flex justify-center space-x-2">
+                            <button @click="resumeTimer()" class="bg-green-500 px-4 py-2 rounded">Devam</button>
+                            <button @click="earlyFinish()" class="bg-yellow-500 px-4 py-2 rounded">Erken Bitir</button>
+                            <button @click="$wire.emergencyBreak(); showDialog = false" class="bg-red-500 px-4 py-2 rounded">
+                                Acil Mola
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
 
 
             </div>

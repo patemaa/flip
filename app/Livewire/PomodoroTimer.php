@@ -3,8 +3,9 @@
 namespace App\Livewire;
 
 use App\Models\Pomodoro;
-use Livewire\Component;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Session;
+use Livewire\Component;
 
 class PomodoroTimer extends Component
 {
@@ -16,11 +17,27 @@ class PomodoroTimer extends Component
     public $dailyTargetTime = '02:00:00';
     public $completionPercentage = 0;
     public $gradeLevel = 'F';
+    public $pomodoro;
+    public $secondsToCountdown = 1500; // örn. 25 dakika
+    public $seconds = 0;
+    public $isPaused = false;
+    public $isFinished = false;
+    public $showDialog = false;
+    public $countdown = 15; // pause dialog countdown
+    public $dailyEmergencyBreaks = 3;
 
-    public function mount()
+
+    protected $listeners = [
+        'incrementBreakCount'
+    ];
+
+    public function mount($pomodoro_id)
     {
         $this->selectedDate = now();
         $this->loadDateData();
+        $this->pomodoro = Pomodoro::findOrFail($pomodoro_id);
+        $this->seconds = $this->secondsToCountdown;
+        $this->dailyEmergencyBreaks = Session::get('daily_emergency_breaks', 3);
     }
 
     public function previousDay()
@@ -68,24 +85,25 @@ class PomodoroTimer extends Component
         $this->firstPomodoroDate = $firstPomodoro ? $firstPomodoro->started_at->format('d.m.Y') : 'Henüz başlanmadı';
     }
 
-    private function calculateGrade($percentage, $breakCount)
+    public function incrementBreakCount()
     {
-        $adjustedPercentage = $percentage - ($breakCount * 5);
-        if ($adjustedPercentage < 0) {
-            $adjustedPercentage = 0;
-        }
+        $this->pomodoro->increment('break_count');
+        $this->pomodoro->refresh();
+    }
 
-        if ($adjustedPercentage >= 100) return 'A';
-        if ($adjustedPercentage >= 80) return 'B';
-        if ($adjustedPercentage >= 60) return 'C';
-        if ($adjustedPercentage >= 40) return 'D';
-        if ($adjustedPercentage >= 20) return 'E';
-        return 'F';
-    }
-    public function getGrade($pomodoro)
+    public function getGrade($pomodoro = null)
     {
-        return $this->calculateGrade($pomodoro->percentage, $pomodoro->break_count);
+        $pomodoro = $pomodoro ?? $this->pomodoro;
+        $breaks = $pomodoro->break_count ?? 0;
+        return $this->calculateGrade($breaks, 0); // İkinci parametre kullanılmıyor
     }
+    private function calculateGrade($breakCount)
+    {
+        $grades = ['A', 'B', 'C', 'D', 'E', 'F'];
+        $index = $breakCount;
+        return $grades[$index] ?? 'F';
+    }
+
 
     public function pausePomodoro($pomodoroId)
     {
@@ -94,6 +112,66 @@ class PomodoroTimer extends Component
             $pomodoro->pauseSession();
             $this->loadDateData();
         }
+    }
+
+    public function pause()
+    {
+        if ($this->seconds < 15) {
+            // kısa süre kaydedilmez
+            $this->resetTimer();
+            session()->flash('message', 'Çok kısa süre kaydedilmiyor.');
+            return;
+        }
+
+        $this->isPaused = true;
+        if ($this->seconds >= 15) {
+            $this->showDialog = true;
+            $this->countdown = 15;
+        }
+    }
+
+    public function resume()
+    {
+        $this->isPaused = false;
+        $this->showDialog = false;
+    }
+
+    public function earlyFinish()
+    {
+        $this->isPaused = false;
+        $this->showDialog = false;
+        $this->applyBreak();
+    }
+
+    public function complete()
+    {
+        $this->isFinished = true;
+        $this->showDialog = false;
+        // Görevi tamamla
+        session()->flash('message', 'Görev tamamlandı.');
+    }
+
+    public function emergencyBreak()
+    {
+        if ($this->dailyEmergencyBreaks <= 0) return;
+
+        $this->dailyEmergencyBreaks--;
+        Session::put('daily_emergency_breaks', $this->dailyEmergencyBreaks);
+        $this->earlyFinish();
+    }
+
+    private function applyBreak()
+    {
+        // Kullanıcının seviyesini düşür
+        session()->flash('message', 'Mola verildi, seviyen düştü.');
+    }
+
+    private function resetTimer()
+    {
+        $this->seconds = $this->secondsToCountdown;
+        $this->isPaused = false;
+        $this->isFinished = false;
+        $this->showDialog = false;
     }
 
     public function resumePomodoro($pomodoroId)
